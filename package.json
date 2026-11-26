@@ -1,0 +1,53 @@
+{
+  "name": "gestao-3d",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Gestão de vendas, cobranças e gastos para quem vende impressão 3D",
+  "scripts": {
+    "dev": "next dev",
+    "dev:demo": "cross-env DATABASE_URL=file:./data/demo.db next dev",
+    "build": "tsx scripts/migrate.ts && next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:studio": "drizzle-kit studio",
+    "db:demo": "cross-env DATABASE_URL=file:./data/demo.db tsx scripts/seed-demo.ts",
+    "vapid": "tsx scripts/generate-vapid.ts",
+    "senha": "tsx scripts/reset-password.ts"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "clsx": "^2.1.1",
+    "drizzle-orm": "^0.45.4",
+    "lucide-react": "^1.80.0",
+    "next": "^16.4.6",
+    "radix-ui": "^1.8.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "recharts": "^3.11.1",
+    "server-only": "^0.0.1",
+    "sonner": "^2.0.8",
+    "tailwind-merge": "^3.7.1",
+    "web-push": "^4.0.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.5",
+    "@types/node": "^24.19.4",
+    "@types/react": "^19.3.3",
+    "@types/react-dom": "^19.3.0",
+    "@types/web-push": "^3.6.4",
+    "cross-env": "^10.1.0",
+    "drizzle-kit": "^0.31.11",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.6",
+    "tailwindcss": "^4.3.5",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "vitest": "^5.1.2"
+  }
+}
