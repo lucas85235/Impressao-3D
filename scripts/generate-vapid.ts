@@ -1,11 +1,12 @@
 /**
  * Gera as chaves das notificações push (VAPID) e segredos sugeridos.
  *
- *   npm run vapid            → mostra as variáveis para copiar (ex.: para a Vercel)
- *   npm run vapid -- --write → acrescenta o que faltar no .env.local (uso local, sem SETUP_CODE)
+ *   npm run vapid             → mostra as variáveis para copiar
+ *   npm run vapid -- --write  → acrescenta o que faltar no .env.local (uso local, sem SETUP_CODE)
+ *   npm run vapid -- --vercel → cria .env.vercel.local para importar na Vercel (produção)
  */
 import { randomBytes } from "node:crypto";
-import { existsSync, readFileSync, appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { generateVAPIDKeys } from "web-push";
 
 const keys = generateVAPIDKeys();
@@ -17,7 +18,37 @@ const vars: Record<string, string> = {
   SETUP_CODE: randomBytes(9).toString("base64url"),
 };
 
-if (process.argv.includes("--write")) {
+if (process.argv.includes("--vercel")) {
+  const file = ".env.vercel.local";
+  if (existsSync(file)) {
+    console.log(`✓ ${file} já existe (mantido). Apague-o só se quiser chaves novas — isso desliga as notificações já ativadas.`);
+  } else {
+    // Sem VAPID_SUBJECT: na Vercel o app usa a própria URL de produção.
+    writeFileSync(
+      file,
+      `# Variáveis de produção para a Vercel (Settings → Environment Variables → "Import .env").
+# Arquivo só deste computador (o .gitignore já ignora). Guarde uma cópia: trocar as chaves
+# VAPID desliga as notificações já ativadas nos aparelhos.
+
+# 1) Cole aqui a URL e o token do banco criado no Turso:
+DATABASE_URL=libsql://COLE-AQUI-A-URL-DO-TURSO
+DATABASE_AUTH_TOKEN=COLE-AQUI-O-TOKEN-DO-TURSO
+
+APP_TIMEZONE=America/Sao_Paulo
+
+# Código pedido uma única vez, na tela de criar a conta no site publicado.
+SETUP_CODE=${vars.SETUP_CODE}
+
+# Notificações push e lembrete diário (gerados automaticamente).
+VAPID_PUBLIC_KEY=${vars.VAPID_PUBLIC_KEY}
+VAPID_PRIVATE_KEY=${vars.VAPID_PRIVATE_KEY}
+CRON_SECRET=${vars.CRON_SECRET}
+`,
+      "utf8",
+    );
+    console.log(`✓ Criado ${file}. Preencha DATABASE_URL e DATABASE_AUTH_TOKEN (Turso) e importe na Vercel.`);
+  }
+} else if (process.argv.includes("--write")) {
   const file = ".env.local";
   const current = existsSync(file) ? readFileSync(file, "utf8") : "";
   // SETUP_CODE só é necessário em produção; localmente a conta é criada sem código.

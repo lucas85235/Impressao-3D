@@ -52,34 +52,40 @@ As notificações push só funcionam com HTTPS — ou seja, depois de publicar (
 
 Usamos **Vercel** (hospedagem) + **Turso** (banco SQLite na nuvem). Os dois têm plano gratuito.
 
-1. **GitHub** — suba este projeto para um repositório **privado**.
-2. **Turso** (banco) — instale a [CLI do Turso](https://docs.turso.tech/cli/introduction) e rode:
-   ```bash
-   turso auth login
-   turso db create gestao3d
-   turso db show gestao3d --url        # → DATABASE_URL (libsql://...)
-   turso db tokens create gestao3d     # → DATABASE_AUTH_TOKEN
-   ```
-3. **Chaves** — rode `npm run vapid` e guarde a saída (VAPID_*, CRON_SECRET e SETUP_CODE).
-4. **Vercel** — em <https://vercel.com/new>, importe o repositório e cadastre em *Environment Variables*:
+1. **GitHub** — crie um repositório **privado e vazio** (sem README) e envie o código:
+   `git remote add origin <url-do-repo>` e `git push -u origin main`.
+2. **Chaves** — `npm run vapid -- --vercel` cria o `.env.vercel.local` (fica só no seu PC) com
+   `SETUP_CODE`, as chaves de notificação (`VAPID_*`), `CRON_SECRET` e `APP_TIMEZONE`.
+3. **Turso** (banco) — no painel <https://app.turso.tech> (entre com o GitHub):
+   - crie um banco na região **AWS US East (Virginia)**, vizinha da região padrão da Vercel (Washington);
+   - copie a URL (`libsql://...`) e gere um token **sem expiração**;
+   - cole os dois no `.env.vercel.local` (`DATABASE_URL` e `DATABASE_AUTH_TOKEN`).
+
+   Pela [CLI do Turso](https://docs.turso.tech/cli/introduction) (no Windows, via WSL):
+   `turso db create gestao3d`, `turso db show gestao3d --url` e `turso db tokens create gestao3d`.
+4. **Vercel** — em <https://vercel.com/new>, entre com o GitHub e importe o repositório.
+   Em *Environment Variables*, use **Import .env** e escolha o `.env.vercel.local`. Depois clique em **Deploy**.
 
    | Variável | Valor |
    |---|---|
-   | `DATABASE_URL` | URL do Turso (`libsql://...`) |
-   | `DATABASE_AUTH_TOKEN` | token do Turso |
-   | `SETUP_CODE` | código para criar a conta inicial |
-   | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | do `npm run vapid` |
-   | `VAPID_SUBJECT` | `mailto:seu-email@...` ou a URL do app |
-   | `CRON_SECRET` | do `npm run vapid` |
+   | `DATABASE_URL` / `DATABASE_AUTH_TOKEN` | do Turso |
+   | `SETUP_CODE` | código pedido na criação da conta |
+   | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | chaves das notificações |
+   | `CRON_SECRET` | segredo do lembrete diário |
    | `APP_TIMEZONE` | `America/Sao_Paulo` |
+   | `VAPID_SUBJECT` (opcional) | `mailto:...` — sem ela, o app usa a própria URL |
 
-   Marque essas variáveis só para **Production**. Deploys de *preview* (outros branches/PRs) não aplicam
+   As variáveis valem para **Production**. Deploys de *preview* (outros branches/PRs) não aplicam
    migrações, para não mexer no banco de produção. Se quiser previews funcionando, crie um segundo banco
    no Turso, cadastre as variáveis dele em **Preview** e adicione `MIGRATE_ON_PREVIEW=1`.
-5. **Deploy** — o build aplica as migrações no banco automaticamente.
-6. Abra o site, **crie sua conta** (ele pede o `SETUP_CODE`).
+5. **Deploy** — o build aplica as migrações no banco automaticamente. Cada `git push` no `main` publica de novo.
+6. Abra o site e **crie sua conta** (ele pede o `SETUP_CODE`).
 7. **No celular**: abra o site → *Adicionar à tela inicial* → **Configurações → Ativar notificações**.
    - iPhone: precisa do iOS 16.4+ e de abrir o app **pela tela inicial** antes de ativar.
+
+> ⚖️ O plano grátis (Hobby) da Vercel é para uso pessoal e não comercial (a regra prática deles: serve quando
+> ninguém ganha dinheiro com o projeto). Painel interno de um negócio fica numa zona cinzenta; para ficar 100%
+> dentro das regras — e com certeza se o app virar loja/vitrine pública — use o plano Pro.
 
 **Lembrete diário:** o `vercel.json` agenda `/api/cron/lembretes` todo dia às **11:00 UTC (08:00 de Brasília)**.
 A Vercel envia o `CRON_SECRET` sozinha. Para mudar o horário, edite o `schedule` (formato cron, em UTC).
@@ -111,7 +117,7 @@ Também dá para usar qualquer agendador externo chamando a URL com o header `Au
 | `npm run db:generate` | Gera migração após mudar `src/db/schema.ts` |
 | `npm run db:migrate` | Aplica migrações no banco de `DATABASE_URL` |
 | `npm run db:studio` | Abre o Drizzle Studio para ver o banco |
-| `npm run vapid` | Gera chaves de notificação e segredos (`-- --write` grava no `.env.local`) |
+| `npm run vapid` | Gera chaves de notificação e segredos (`-- --write` grava no `.env.local`; `-- --vercel` cria o `.env.vercel.local`) |
 | `npm run senha` | Redefine a senha de acesso |
 | `npm test` · `npm run typecheck` · `npm run lint` | Testes, tipos e lint |
 
