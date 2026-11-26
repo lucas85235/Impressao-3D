@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox, Field, FormError, Input, Select, Textarea } from "@/components/ui/field";
+import { IntegerInput } from "@/components/ui/integer-input";
 import { MoneyInput } from "@/components/ui/money-input";
 import {
   FREQUENCIES,
@@ -402,14 +403,12 @@ export function SaleForm({
                     />
                   </Field>
                   <Field label="Qtd." htmlFor={`qty-${item.key}`} className="sm:col-span-2">
-                    <Input
+                    <IntegerInput
                       id={`qty-${item.key}`}
-                      type="number"
-                      inputMode="numeric"
                       min={1}
                       max={100000}
                       value={item.quantity}
-                      onChange={(e) => updateItem(item.key, { quantity: Math.max(1, Math.floor(Number(e.target.value) || 1)) })}
+                      onValueChange={(quantity) => updateItem(item.key, { quantity })}
                     />
                   </Field>
                   <Field label="Valor unitário" htmlFor={`price-${item.key}`} className="sm:col-span-4">
