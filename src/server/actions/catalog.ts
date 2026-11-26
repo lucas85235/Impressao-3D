@@ -8,7 +8,7 @@ import { db } from "@/db";
 import { customers, products, saleItems, sales } from "@/db/schema";
 import { fail, ok, type ActionResult } from "@/lib/utils";
 import { requireUser } from "@/server/auth";
-import { cents, firstIssue, id, optionalText } from "@/server/validation";
+import { cents, firstIssue, optionalText, parseId } from "@/server/validation";
 
 // ─── Clientes ──────────────────────────────────────────────────────────────
 
@@ -31,9 +31,12 @@ export async function saveCustomerAction(
   const parsed = customerSchema.safeParse(input);
   if (!parsed.success) return fail(firstIssue(parsed.error));
   let savedId: number;
-  if (customerId) {
-    await db.update(customers).set(parsed.data).where(eq(customers.id, customerId));
-    savedId = customerId;
+  if (customerId != null) {
+    const cid = parseId(customerId);
+    if (!cid) return fail("Cliente inválido.");
+    const updated = await db.update(customers).set(parsed.data).where(eq(customers.id, cid)).returning({ id: customers.id });
+    if (updated.length === 0) return fail("Cliente não encontrado.");
+    savedId = cid;
   } else {
     const [created] = await db.insert(customers).values(parsed.data).returning({ id: customers.id });
     savedId = created.id;
@@ -44,10 +47,12 @@ export async function saveCustomerAction(
 
 export async function deleteCustomerAction(customerId: number): Promise<ActionResult> {
   await requireUser();
+  const cid = parseId(customerId);
+  if (!cid) return fail("Cliente inválido.");
   await db.transaction(async (tx) => {
     // As vendas continuam existindo, só perdem o vínculo com o cliente.
-    await tx.update(sales).set({ customerId: null }).where(eq(sales.customerId, customerId));
-    await tx.delete(customers).where(eq(customers.id, customerId));
+    await tx.update(sales).set({ customerId: null }).where(eq(sales.customerId, cid));
+    await tx.delete(customers).where(eq(customers.id, cid));
   });
   revalidatePath("/", "layout");
   redirect("/clientes");
@@ -73,9 +78,12 @@ export async function saveProductAction(productId: number | null, input: Product
   const parsed = productSchema.safeParse(input);
   if (!parsed.success) return fail(firstIssue(parsed.error));
   let savedId: number;
-  if (productId) {
-    await db.update(products).set(parsed.data).where(eq(products.id, productId));
-    savedId = productId;
+  if (productId != null) {
+    const pid = parseId(productId);
+    if (!pid) return fail("Produto inválido.");
+    const updated = await db.update(products).set(parsed.data).where(eq(products.id, pid)).returning({ id: products.id });
+    if (updated.length === 0) return fail("Produto não encontrado.");
+    savedId = pid;
   } else {
     const [created] = await db.insert(products).values(parsed.data).returning({ id: products.id });
     savedId = created.id;
@@ -86,17 +94,22 @@ export async function saveProductAction(productId: number | null, input: Product
 
 export async function setProductActiveAction(productId: number, active: boolean): Promise<ActionResult> {
   await requireUser();
-  await db.update(products).set({ active }).where(eq(products.id, id.parse(productId)));
+  const pid = parseId(productId);
+  if (!pid || typeof active !== "boolean") return fail("Dados inválidos.");
+  const updated = await db.update(products).set({ active }).where(eq(products.id, pid)).returning({ id: products.id });
+  if (updated.length === 0) return fail("Produto não encontrado.");
   revalidatePath("/", "layout");
   return ok();
 }
 
 export async function deleteProductAction(productId: number): Promise<ActionResult> {
   await requireUser();
+  const pid = parseId(productId);
+  if (!pid) return fail("Produto inválido.");
   await db.transaction(async (tx) => {
     // Itens de vendas antigas mantêm a descrição; só perdem o vínculo com o catálogo.
-    await tx.update(saleItems).set({ productId: null }).where(eq(saleItems.productId, productId));
-    await tx.delete(products).where(eq(products.id, productId));
+    await tx.update(saleItems).set({ productId: null }).where(eq(saleItems.productId, pid));
+    await tx.delete(products).where(eq(products.id, pid));
   });
   revalidatePath("/", "layout");
   return ok();

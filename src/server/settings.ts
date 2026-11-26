@@ -1,4 +1,5 @@
 import "server-only";
+import { sql } from "drizzle-orm";
 import { cache } from "react";
 import { db } from "@/db";
 import { settings } from "@/db/schema";
@@ -27,4 +28,18 @@ export async function saveSettings(partial: Partial<AppSettings>) {
       .values({ key, value: json })
       .onConflictDoUpdate({ target: settings.key, set: { value: json } });
   }
+}
+
+/**
+ * Grava `value` em `key` só se o valor salvo for diferente, numa única instrução (atômica).
+ * Devolve true se gravou: quem recebe true "ganhou a vez" (ex.: mandar o resumo do dia uma vez só).
+ */
+export async function claimSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): Promise<boolean> {
+  const json = JSON.stringify(value);
+  const rows = await db
+    .insert(settings)
+    .values({ key, value: json })
+    .onConflictDoUpdate({ target: settings.key, set: { value: json }, setWhere: sql`${settings.value} <> ${json}` })
+    .returning({ key: settings.key });
+  return rows.length > 0;
 }

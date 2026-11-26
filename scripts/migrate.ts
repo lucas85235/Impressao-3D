@@ -14,6 +14,13 @@ loadEnvConfig(process.cwd());
 async function main() {
   const url = process.env.DATABASE_URL || DEFAULT_DATABASE_URL;
 
+  // Deploy de preview (branch/PR) não migra: se ele usar o mesmo banco da produção, uma migração
+  // nova quebraria o app publicado. Com um banco só para preview, defina MIGRATE_ON_PREVIEW=1.
+  if (process.env.VERCEL_ENV === "preview" && process.env.MIGRATE_ON_PREVIEW !== "1") {
+    console.log("→ Deploy de preview: migrações puladas (defina MIGRATE_ON_PREVIEW=1 se o preview usa um banco separado).");
+    return;
+  }
+
   if (process.env.VERCEL && url.startsWith("file:")) {
     throw new Error(
       "DATABASE_URL não configurada na Vercel. Crie um banco no Turso e defina DATABASE_URL e DATABASE_AUTH_TOKEN (veja o README).",

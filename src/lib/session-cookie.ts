@@ -5,9 +5,10 @@ export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 dias
 
 /**
  * Cookie "secure" em produção. Para rodar `npm start` em rede local via http
- * (sem HTTPS), defina COOKIE_SECURE=false.
+ * (sem HTTPS), defina COOKIE_SECURE=false — isso é ignorado na Vercel, que sempre usa HTTPS.
  */
 export function isCookieSecure(): boolean {
+  if (process.env.VERCEL_ENV === "production" || process.env.VERCEL_ENV === "preview") return true;
   if (process.env.COOKIE_SECURE) return process.env.COOKIE_SECURE === "true";
   return process.env.NODE_ENV === "production";
 }

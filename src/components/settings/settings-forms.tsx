@@ -215,7 +215,7 @@ export function PasswordForm() {
             confirm: String(fd.get("confirm") ?? ""),
           });
           if (!result.ok) setError(result.error);
-          else toast.success("Senha alterada");
+          else toast.success("Senha alterada", { description: "Os outros aparelhos foram desconectados." });
         });
       }}
       className="grid grid-cols-1 gap-4 sm:grid-cols-3"

@@ -1,5 +1,5 @@
-import { timingSafeEqual } from "node:crypto";
 import { todayISO } from "@/lib/dates";
+import { secretsMatch } from "@/server/password";
 import { runDailyReminders } from "@/server/reminders";
 
 /*
@@ -14,10 +14,7 @@ export const dynamic = "force-dynamic";
 function authorized(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
   if (!secret) return false;
-  const header = request.headers.get("authorization") ?? "";
-  const expected = Buffer.from(`Bearer ${secret}`);
-  const received = Buffer.from(header);
-  return expected.length === received.length && timingSafeEqual(expected, received);
+  return secretsMatch(request.headers.get("authorization") ?? "", `Bearer ${secret}`);
 }
 
 export async function GET(request: Request) {

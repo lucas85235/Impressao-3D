@@ -6,11 +6,11 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
 import { expenseCategories, expenses } from "@/db/schema";
-import { addMonths, todayISO } from "@/lib/dates";
-import { splitEvenly } from "@/lib/money";
+import { todayISO } from "@/lib/dates";
+import { planExpenseInstallments } from "@/lib/domain/expenses";
 import { fail, ok, type ActionResult } from "@/lib/utils";
 import { requireUser } from "@/server/auth";
-import { firstIssue, id, isoDate, optionalText, positiveCents } from "@/server/validation";
+import { firstIssue, id, isoDate, optionalText, parseId, positiveCents } from "@/server/validation";
 
 const expenseSchema = z.object({
   description: z.string().trim().min(1, "Descreva o gasto.").max(200),
@@ -40,24 +40,19 @@ export async function createExpenseAction(input: ExpenseInput): Promise<ActionRe
   if (n === 1) {
     await db.insert(expenses).values(data);
   } else {
-    const today = todayISO();
-    const amounts = amountMode === "total" ? splitEvenly(data.amountCents, n) : Array<number>(n).fill(data.amountCents);
+    if (amountMode === "total" && data.amountCents < n) {
+      return fail(`Valor pequeno demais para ${n} parcelas (cada uma precisa de pelo menos R$ 0,01).`);
+    }
+    const plan = planExpenseInstallments({
+      amountCents: data.amountCents,
+      firstDate: data.date,
+      count: n,
+      amountMode,
+      paid: data.paid,
+      today: todayISO(),
+    });
     const groupId = randomUUID();
-    await db.insert(expenses).values(
-      amounts.map((amountCents, i) => {
-        const date = addMonths(data.date, i);
-        return {
-          ...data,
-          amountCents,
-          date,
-          // 1ª parcela segue o que foi marcado; as demais ficam pagas só se a data já passou.
-          paid: i === 0 ? data.paid : date <= today,
-          groupId,
-          installmentNumber: i + 1,
-          installmentCount: n,
-        };
-      }),
-    );
+    await db.insert(expenses).values(plan.map((p) => ({ ...data, ...p, groupId, installmentCount: n })));
   }
   revalidatePath("/", "layout");
   return ok({ count: n });
@@ -65,36 +60,44 @@ export async function createExpenseAction(input: ExpenseInput): Promise<ActionRe
 
 export async function updateExpenseAction(expenseId: number, input: z.input<typeof expenseSchema>): Promise<ActionResult> {
   await requireUser();
+  const eid = parseId(expenseId);
+  if (!eid) return fail("Gasto inválido.");
   const parsed = expenseSchema.safeParse(input);
   if (!parsed.success) return fail(firstIssue(parsed.error));
-  await db.update(expenses).set(parsed.data).where(eq(expenses.id, expenseId));
+  const updated = await db.update(expenses).set(parsed.data).where(eq(expenses.id, eid)).returning({ id: expenses.id });
+  if (updated.length === 0) return fail("Gasto não encontrado.");
   revalidatePath("/", "layout");
   return ok();
 }
 
 export async function setExpensePaidAction(expenseId: number, paid: boolean): Promise<ActionResult> {
   await requireUser();
-  await db.update(expenses).set({ paid }).where(eq(expenses.id, expenseId));
+  const eid = parseId(expenseId);
+  if (!eid || typeof paid !== "boolean") return fail("Dados inválidos.");
+  const updated = await db.update(expenses).set({ paid }).where(eq(expenses.id, eid)).returning({ id: expenses.id });
+  if (updated.length === 0) return fail("Gasto não encontrado.");
   revalidatePath("/", "layout");
   return ok();
 }
 
 export async function deleteExpenseAction(expenseId: number, scope: "one" | "group" = "one"): Promise<ActionResult> {
   await requireUser();
-  const [row] = await db.select({ groupId: expenses.groupId }).from(expenses).where(eq(expenses.id, expenseId));
+  const eid = parseId(expenseId);
+  if (!eid) return fail("Gasto inválido.");
+  const [row] = await db.select({ groupId: expenses.groupId }).from(expenses).where(eq(expenses.id, eid));
   if (!row) return fail("Gasto não encontrado.");
   if (scope === "group" && row.groupId) {
     await db.delete(expenses).where(eq(expenses.groupId, row.groupId));
   } else {
-    await db.delete(expenses).where(eq(expenses.id, expenseId));
+    await db.delete(expenses).where(eq(expenses.id, eid));
   }
   revalidatePath("/", "layout");
   return ok();
 }
 
-export async function createExpenseCategoryAction(name: string): Promise<ActionResult<{ id: number; name: string }>> {
+export async function createExpenseCategoryAction(name: unknown): Promise<ActionResult<{ id: number; name: string }>> {
   await requireUser();
-  const clean = name.trim().slice(0, 60);
+  const clean = String(name ?? "").trim().slice(0, 60);
   if (!clean) return fail("Informe o nome da categoria.");
   const existing = await db.query.expenseCategories.findFirst({ where: eq(expenseCategories.name, clean) });
   if (existing) return ok({ id: existing.id, name: existing.name });

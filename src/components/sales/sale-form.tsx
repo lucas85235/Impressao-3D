@@ -236,7 +236,9 @@ export function SaleForm({
         setError(result.error);
         return;
       }
-      toast.success(isEdit ? "Venda atualizada" : "Venda registrada");
+      toast.success(isEdit ? "Venda atualizada" : "Venda registrada", {
+        description: result.data.confirmedQuote ? "Com o pagamento recebido, o orçamento virou venda (em produção)." : undefined,
+      });
       router.push(`/vendas/${result.data.id}`);
     });
   }

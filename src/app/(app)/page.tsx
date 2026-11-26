@@ -60,7 +60,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       getPeriodTotals(period.start, period.end),
       getPeriodTotals(period.prevStart, period.prevEnd),
       getMonthlySeries(period.trendMonths),
-      expensesByCategory(period.start, period.end),
+      expensesByCategory(period.start, period.end, { paidOnly: true }),
       getTopProducts(period.start, period.end),
       getChannelBreakdown(period.start, period.end),
       listSales({ filter: "todas", today, limit: 5 }),
@@ -236,9 +236,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       {/* ── Resultados (filtrados pelo período) ── */}
       <section aria-labelledby="resultados-title" className="space-y-4 pt-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 id="resultados-title" className="text-lg font-semibold tracking-tight">
-            Resultados
-          </h2>
+          <div>
+            <h2 id="resultados-title" className="text-lg font-semibold tracking-tight">
+              Resultados
+            </h2>
+            <p className="text-sm text-ink-2">O que entrou e saiu do caixa no período. Gastos ainda não pagos ficam de fora.</p>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex rounded-xl bg-hover p-1" role="tablist" aria-label="Agrupar por">
               {(["mes", "ano"] as const).map((mode) => (

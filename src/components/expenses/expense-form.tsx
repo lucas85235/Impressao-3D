@@ -10,8 +10,9 @@ import { Checkbox, Field, FormError, Input, Select, Textarea } from "@/component
 import { Modal } from "@/components/ui/modal";
 import { MoneyInput } from "@/components/ui/money-input";
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL } from "@/lib/constants";
-import { addMonths, formatDateBR } from "@/lib/dates";
-import { formatBRL, splitEvenly } from "@/lib/money";
+import { formatDateBR, isValidISODate } from "@/lib/dates";
+import { planExpenseInstallments } from "@/lib/domain/expenses";
+import { formatBRL } from "@/lib/money";
 import {
   createExpenseAction,
   createExpenseCategoryAction,
@@ -128,13 +129,12 @@ export function ExpenseFormButton({
     });
   }
 
+  // Mesma regra usada pelo servidor ao gravar (valores, datas e quais já ficam pagas).
   const preview =
-    installments && amount > 0
-      ? (amountMode === "total" ? splitEvenly(amount, count) : Array<number>(count).fill(amount)).map((v, i) => ({
-          amount: v,
-          date: addMonths(date, i),
-        }))
+    installments && amount > 0 && isValidISODate(date)
+      ? planExpenseInstallments({ amountCents: amount, firstDate: date, count, amountMode, paid, today })
       : [];
+  const previewPaid = preview.filter((p) => p.paid).length;
 
   return (
     <>
@@ -229,8 +229,12 @@ export function ExpenseFormButton({
           </Field>
           <div className="flex items-end pb-2">
             <Checkbox
-              label={installments ? "1ª parcela já paga" : "Já está pago"}
-              description="Gastos não pagos aparecem em “Contas a pagar”."
+              label={installments ? "Já paguei a 1ª parcela" : "Já está pago"}
+              description={
+                installments
+                  ? "As parcelas com data até hoje também ficam pagas; as outras vão para “Contas a pagar”."
+                  : "Gastos não pagos aparecem em “Contas a pagar”."
+              }
               checked={paid}
               onChange={(e) => setPaid(e.target.checked)}
             />
@@ -263,9 +267,14 @@ export function ExpenseFormButton({
                   </Field>
                   {preview.length > 0 ? (
                     <p className="text-xs text-ink-2 sm:col-span-2">
-                      {count}x de {formatBRL(preview[preview.length - 1].amount)} · de {formatDateBR(preview[0].date)} até{" "}
-                      {formatDateBR(preview[preview.length - 1].date)} · total {formatBRL(preview.reduce((s, p) => s + p.amount, 0))}.
-                      Parcelas futuras ficam como “a pagar”.
+                      {count}x de {formatBRL(preview[preview.length - 1].amountCents)} · de {formatDateBR(preview[0].date)} até{" "}
+                      {formatDateBR(preview[preview.length - 1].date)} · total{" "}
+                      {formatBRL(preview.reduce((s, p) => s + p.amountCents, 0))}.{" "}
+                      {previewPaid === 0
+                        ? "Todas vão para “Contas a pagar”."
+                        : previewPaid === preview.length
+                          ? "Todas ficam como pagas."
+                          : `${previewPaid} ${previewPaid === 1 ? "fica paga" : "ficam pagas"}; as outras vão para “Contas a pagar”.`}
                     </p>
                   ) : null}
                 </div>

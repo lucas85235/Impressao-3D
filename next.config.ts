@@ -4,6 +4,11 @@ const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  // Só tem efeito quando o site é servido por HTTPS (em http://, como na rede local, o navegador ignora).
+  { key: "Strict-Transport-Security", value: "max-age=63072000" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
+  // Não restringe scripts (o tema usa um script inline); bloqueia <base>, plugins, iframes e formulários para fora.
+  { key: "Content-Security-Policy", value: "base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'" },
 ];
 
 const nextConfig: NextConfig = {

@@ -6,14 +6,15 @@ import { todayISO } from "@/lib/dates";
 import { requireUser } from "@/server/auth";
 import { listCustomerOptions, listProductOptions, listUsedChannels } from "@/server/queries/catalog";
 import { getSaleDetail } from "@/server/queries/sales";
+import { parseId } from "@/server/validation";
 
 export const metadata: Metadata = { title: "Editar venda" };
 
 export default async function EditSalePage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser();
-  const { id } = await params;
+  const saleId = parseId((await params).id);
   const today = todayISO();
-  const sale = await getSaleDetail(Number(id), today);
+  const sale = saleId ? await getSaleDetail(saleId, today) : null;
   if (!sale) notFound();
 
   const [customers, catalog, channels] = await Promise.all([

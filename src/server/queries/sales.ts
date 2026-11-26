@@ -21,10 +21,20 @@ export async function listSales({
   customerId?: number;
   limit?: number;
 }) {
+  const paidSub = db
+    .select({ saleId: payments.saleId, paid: sql<number>`sum(${payments.amountCents})`.as("paid") })
+    .from(payments)
+    .groupBy(payments.saleId)
+    .as("paid_sub");
+  const paidCents = sql`coalesce(${paidSub.paid}, 0)`;
+
   const conditions: SQL[] = [];
   if (filter === "orcamentos") conditions.push(eq(sales.status, "orcamento"));
   else if (filter === "canceladas") conditions.push(eq(sales.status, "cancelado"));
   else if (filter !== "todas") conditions.push(notInArray(sales.status, [...INACTIVE_SALE_STATUSES]));
+  // "Pagas" e "em aberto" dependem só da soma dos pagamentos: filtra no SQL, ANTES do limite.
+  if (filter === "pagas") conditions.push(sql`${paidCents} >= ${sales.totalCents}`);
+  if (filter === "abertas" || filter === "atrasadas") conditions.push(sql`${paidCents} < ${sales.totalCents}`);
   if (customerId) conditions.push(eq(sales.customerId, customerId));
   const term = q?.trim().toLowerCase();
   if (term) {
@@ -32,7 +42,7 @@ export async function listSales({
     conditions.push(or(like(sql`lower(${sales.title})`, pattern), like(sql`lower(${customers.name})`, pattern))!);
   }
 
-  const rows = await db
+  const query = db
     .select({
       id: sales.id,
       date: sales.date,
@@ -44,24 +54,16 @@ export async function listSales({
       customerName: customers.name,
     })
     .from(sales)
+    .leftJoin(paidSub, eq(paidSub.saleId, sales.id))
     .leftJoin(customers, eq(customers.id, sales.customerId))
     .where(conditions.length ? and(...conditions) : undefined)
-    .orderBy(desc(sales.date), desc(sales.id))
-    .limit(limit);
+    .orderBy(desc(sales.date), desc(sales.id));
 
+  // "Atrasadas" precisa do abatimento parcela a parcela: busca todas as em aberto e só depois corta.
+  const rows = filter === "atrasadas" ? await query : await query.limit(limit);
   const states = await computePaymentStates(rows, today);
   const withState = rows.map((r) => ({ ...r, summary: states.get(r.id)!.summary }));
-
-  switch (filter) {
-    case "abertas":
-      return withState.filter((r) => r.summary.status !== "paga");
-    case "atrasadas":
-      return withState.filter((r) => r.summary.status === "atrasada");
-    case "pagas":
-      return withState.filter((r) => r.summary.status === "paga");
-    default:
-      return withState;
-  }
+  return filter === "atrasadas" ? withState.filter((r) => r.summary.status === "atrasada").slice(0, limit) : withState;
 }
 
 export type SaleListRow = Awaited<ReturnType<typeof listSales>>[number];

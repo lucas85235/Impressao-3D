@@ -3,7 +3,7 @@ import { formatBRL } from "@/lib/money";
 import { listPayables } from "@/server/queries/expenses";
 import { getOpenInstallments, summarizeReceivables } from "@/server/queries/receivables";
 import { sendPushToAll, type PushPayload } from "@/server/push";
-import { getSettings, saveSettings } from "@/server/settings";
+import { claimSetting, getSettings, saveSettings } from "@/server/settings";
 
 function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`;
@@ -46,16 +46,20 @@ export async function buildDailyDigest(today: string): Promise<PushPayload | nul
 
 /** Executado pelo agendador (cron). Envia no máximo um resumo por dia, a menos que force=true. */
 export async function runDailyReminders({ today, force = false }: { today: string; force?: boolean }) {
-  const settings = await getSettings();
-  if (!force && settings.lastDigestDate === today) {
-    return { status: "ja-enviado-hoje" as const };
+  const previous = (await getSettings()).lastDigestDate;
+  // Reserva o dia ANTES de enviar (atômico): se o cron disparar duas vezes, só uma execução envia.
+  if (force) await saveSettings({ lastDigestDate: today });
+  else if (!(await claimSetting("lastDigestDate", today))) return { status: "ja-enviado-hoje" as const };
+
+  try {
+    const digest = await buildDailyDigest(today);
+    if (!digest) return { status: "nada-pendente" as const };
+    const result = await sendPushToAll(digest);
+    // Nenhum aparelho recebeu: libera o dia para uma nova tentativa.
+    if (result.sent === 0) await saveSettings({ lastDigestDate: previous });
+    return { status: result.devices === 0 ? ("sem-dispositivos" as const) : ("enviado" as const), digest, ...result };
+  } catch (err) {
+    await saveSettings({ lastDigestDate: previous });
+    throw err;
   }
-  const digest = await buildDailyDigest(today);
-  if (!digest) {
-    await saveSettings({ lastDigestDate: today });
-    return { status: "nada-pendente" as const };
-  }
-  const result = await sendPushToAll(digest);
-  if (result.sent > 0) await saveSettings({ lastDigestDate: today });
-  return { status: result.devices === 0 ? ("sem-dispositivos" as const) : ("enviado" as const), digest, ...result };
 }

@@ -11,7 +11,7 @@ import { requireUser } from "@/server/auth";
 import { isPushConfigured, sendPushToAll } from "@/server/push";
 import { buildDailyDigest } from "@/server/reminders";
 import { saveSettings } from "@/server/settings";
-import { firstIssue } from "@/server/validation";
+import { firstIssue, parseId } from "@/server/validation";
 
 const businessSchema = z.object({
   businessName: z.string().trim().min(1, "Informe o nome do negócio.").max(80),
@@ -45,21 +45,23 @@ export async function saveTemplatesAction(input: z.input<typeof templatesSchema>
 // ─── Notificações push ─────────────────────────────────────────────────────
 
 const subscriptionSchema = z.object({
-  endpoint: z.url().max(2000),
+  // Serviços de push (FCM, Mozilla, Apple, WNS) sempre usam https.
+  endpoint: z.url({ protocol: /^https$/ }).max(2000),
   keys: z.object({ p256dh: z.string().min(1).max(500), auth: z.string().min(1).max(200) }),
 });
 
-export async function savePushSubscriptionAction(subscription: unknown, userAgent: string): Promise<ActionResult> {
+export async function savePushSubscriptionAction(subscription: unknown, userAgent: unknown): Promise<ActionResult> {
   const user = await requireUser();
   const parsed = subscriptionSchema.safeParse(subscription);
   if (!parsed.success) return fail("Inscrição de notificação inválida.");
   const { endpoint, keys } = parsed.data;
+  const ua = String(userAgent ?? "").slice(0, 300);
   await db
     .insert(pushSubscriptions)
-    .values({ userId: user.id, endpoint, p256dh: keys.p256dh, auth: keys.auth, userAgent: userAgent.slice(0, 300) })
+    .values({ userId: user.id, endpoint, p256dh: keys.p256dh, auth: keys.auth, userAgent: ua })
     .onConflictDoUpdate({
       target: pushSubscriptions.endpoint,
-      set: { userId: user.id, p256dh: keys.p256dh, auth: keys.auth, userAgent: userAgent.slice(0, 300) },
+      set: { userId: user.id, p256dh: keys.p256dh, auth: keys.auth, userAgent: ua },
     });
   revalidatePath("/configuracoes");
   return ok();
@@ -68,9 +70,13 @@ export async function savePushSubscriptionAction(subscription: unknown, userAgen
 export async function removePushSubscriptionAction(endpointOrId: string | number): Promise<ActionResult> {
   await requireUser();
   if (typeof endpointOrId === "number") {
-    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, endpointOrId));
-  } else {
+    const subId = parseId(endpointOrId);
+    if (!subId) return fail("Dispositivo inválido.");
+    await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, subId));
+  } else if (typeof endpointOrId === "string" && endpointOrId.length <= 2000) {
     await db.delete(pushSubscriptions).where(eq(pushSubscriptions.endpoint, endpointOrId));
+  } else {
+    return fail("Dispositivo inválido.");
   }
   revalidatePath("/configuracoes");
   return ok();

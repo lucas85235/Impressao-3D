@@ -17,20 +17,23 @@ import { deleteCustomerAction } from "@/server/actions/catalog";
 import { requireUser } from "@/server/auth";
 import { getCustomer } from "@/server/queries/catalog";
 import { listSales } from "@/server/queries/sales";
+import { parseId } from "@/server/validation";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
-  const { id } = await params;
-  const customer = await getCustomer(Number(id));
+  await requireUser();
+  const customerId = parseId((await params).id);
+  const customer = customerId ? await getCustomer(customerId) : null;
   return { title: customer?.name ?? "Cliente" };
 }
 
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser();
-  const { id } = await params;
-  const customer = await getCustomer(Number(id));
+  const customerId = parseId((await params).id);
+  const customer = customerId ? await getCustomer(customerId) : null;
   if (!customer) notFound();
   const today = todayISO();
-  const sales = await listSales({ filter: "todas", today, customerId: customer.id });
+  // Sem o limite padrão da lista: os totais do cliente precisam de todas as vendas dele.
+  const sales = await listSales({ filter: "todas", today, customerId: customer.id, limit: 100_000 });
 
   const active = sales.filter((s) => !INACTIVE_SALE_STATUSES.includes(s.status));
   const bought = active.reduce((s, r) => s + r.totalCents, 0);

@@ -1,7 +1,7 @@
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
-import { count, eq } from "drizzle-orm";
-import { cookies } from "next/headers";
+import { and, count, eq, lte, ne, or, sql } from "drizzle-orm";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { db } from "@/db";
@@ -10,7 +10,7 @@ import { SESSION_COOKIE, SESSION_TTL_MS, sessionCookieOptions } from "@/lib/sess
 
 // ─── Senhas ────────────────────────────────────────────────────────────────
 
-export { hashPassword, verifyPassword, PASSWORD_MIN_LENGTH } from "./password";
+export { hashPassword, verifyPassword, secretsMatch, PASSWORD_MIN_LENGTH, PASSWORD_MAX_LENGTH } from "./password";
 
 // ─── Sessões ───────────────────────────────────────────────────────────────
 
@@ -22,13 +22,18 @@ function hashToken(token: string): string {
 
 /** Cria a sessão e grava o cookie. Só pode ser chamada em Server Action / Route Handler. */
 export async function createSession(userId: number) {
+  const store = await cookies();
+  const previous = store.get(SESSION_COOKIE)?.value;
   const token = randomBytes(32).toString("base64url");
   await db.insert(sessions).values({
     id: hashToken(token),
     userId,
     expiresAt: new Date(Date.now() + SESSION_TTL_MS),
   });
-  const store = await cookies();
+  // Faxina: a sessão anterior deste navegador e as sessões já vencidas.
+  await db
+    .delete(sessions)
+    .where(or(lte(sessions.expiresAt, new Date()), previous ? eq(sessions.id, hashToken(previous)) : undefined));
   store.set(SESSION_COOKIE, token, sessionCookieOptions());
 }
 
@@ -37,6 +42,13 @@ export async function destroySession() {
   const token = store.get(SESSION_COOKIE)?.value;
   if (token) await db.delete(sessions).where(eq(sessions.id, hashToken(token)));
   store.delete(SESSION_COOKIE);
+}
+
+/** Encerra as sessões do usuário em todos os outros aparelhos (a deste navegador continua). */
+export async function revokeOtherSessions(userId: number) {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  const current = token ? hashToken(token) : "";
+  await db.delete(sessions).where(and(eq(sessions.userId, userId), ne(sessions.id, current)));
 }
 
 export type CurrentUser = { id: number; name: string; email: string };
@@ -86,38 +98,49 @@ export async function hasAnyUser(): Promise<boolean> {
   return (row?.n ?? 0) > 0;
 }
 
-// ─── Limite de tentativas de login ─────────────────────────────────────────
+// ─── Limite de tentativas (login, criação da conta, troca de senha) ────────
 
-const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 15 * 60 * 1000;
 
-export async function loginThrottle(key: string): Promise<{ blocked: boolean; retryInMinutes: number }> {
-  const [row] = await db.select().from(authAttempts).where(eq(authAttempts.key, key)).limit(1);
-  if (!row) return { blocked: false, retryInMinutes: 0 };
-  const elapsed = Date.now() - row.windowStart.getTime();
-  if (elapsed > WINDOW_MS) return { blocked: false, retryInMinutes: 0 };
+export type AttemptCheck = { blocked: boolean; retryInMinutes: number };
+
+/**
+ * Conta UMA tentativa para `key` e diz se ela passou de `max` na janela de 15 min.
+ * Chame ANTES de conferir a senha/código. É um único INSERT … ON CONFLICT (atômico):
+ * requisições em paralelo não conseguem passar todas juntas pelo limite.
+ */
+export async function takeAttempt(key: string, max: number): Promise<AttemptCheck> {
+  const now = Date.now();
+  const expired = sql`${authAttempts.windowStart} <= ${now - WINDOW_MS}`;
+  const [row] = await db
+    .insert(authAttempts)
+    .values({ key, count: 1, windowStart: new Date(now) })
+    .onConflictDoUpdate({
+      target: authAttempts.key,
+      set: {
+        count: sql`CASE WHEN ${expired} THEN 1 ELSE ${authAttempts.count} + 1 END`,
+        windowStart: sql`CASE WHEN ${expired} THEN ${now} ELSE ${authAttempts.windowStart} END`,
+      },
+    })
+    .returning({ count: authAttempts.count, windowStart: authAttempts.windowStart });
+  const elapsed = now - row.windowStart.getTime();
   return {
-    blocked: row.count >= MAX_ATTEMPTS,
+    blocked: row.count > max,
     retryInMinutes: Math.max(1, Math.ceil((WINDOW_MS - elapsed) / 60000)),
   };
 }
 
-export async function registerFailedLogin(key: string) {
-  const [row] = await db.select().from(authAttempts).where(eq(authAttempts.key, key)).limit(1);
-  const now = new Date();
-  if (!row || now.getTime() - row.windowStart.getTime() > WINDOW_MS) {
-    await db
-      .insert(authAttempts)
-      .values({ key, count: 1, windowStart: now })
-      .onConflictDoUpdate({ target: authAttempts.key, set: { count: 1, windowStart: now } });
-  } else {
-    await db
-      .update(authAttempts)
-      .set({ count: row.count + 1 })
-      .where(eq(authAttempts.key, key));
-  }
+export async function clearAttempts(key: string) {
+  await db.delete(authAttempts).where(eq(authAttempts.key, key));
 }
 
-export async function clearLoginAttempts(key: string) {
-  await db.delete(authAttempts).where(eq(authAttempts.key, key));
+/** Apaga contadores com a janela vencida (a tabela não cresce sem limite). */
+export async function pruneAttempts() {
+  await db.delete(authAttempts).where(lte(authAttempts.windowStart, new Date(Date.now() - WINDOW_MS)));
+}
+
+/** IP de quem fez a requisição. Na Vercel o x-forwarded-for é preenchido pela plataforma (não pelo cliente). */
+export async function clientIp(): Promise<string> {
+  const h = await headers();
+  return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip")?.trim() || "local";
 }

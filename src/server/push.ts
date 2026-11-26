@@ -1,10 +1,12 @@
 import "server-only";
-import { eq } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { sendNotification, setVapidDetails, WebPushError } from "web-push";
 import { db } from "@/db";
 import { pushSubscriptions } from "@/db/schema";
 
 export type PushPayload = { title: string; body: string; url?: string; tag?: string };
+
+export type PushResult = { sent: number; failed: number; removed: number; devices: number; error?: string };
 
 export function getVapidPublicKey(): string | null {
   return process.env.VAPID_PUBLIC_KEY || null;
@@ -26,32 +28,45 @@ function configure() {
   configured = true;
 }
 
-/** Envia para todos os dispositivos inscritos. Remove inscrições expiradas. */
-export async function sendPushToAll(payload: PushPayload) {
+/** Envia para todos os dispositivos inscritos (em paralelo, com timeout). Remove inscrições expiradas. */
+export async function sendPushToAll(payload: PushPayload): Promise<PushResult> {
   if (!isPushConfigured()) return { sent: 0, failed: 0, removed: 0, devices: 0, error: "Push não configurado (VAPID)." };
-  configure();
-  const subs = await db.select().from(pushSubscriptions);
-  let sent = 0;
-  let failed = 0;
-  let removed = 0;
-  for (const sub of subs) {
-    try {
-      await sendNotification(
-        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
-        JSON.stringify(payload),
-        { TTL: 12 * 60 * 60, urgency: "normal" },
-      );
-      sent++;
-      await db.update(pushSubscriptions).set({ lastUsedAt: new Date() }).where(eq(pushSubscriptions.id, sub.id));
-    } catch (err) {
-      if (err instanceof WebPushError && (err.statusCode === 404 || err.statusCode === 410)) {
-        await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, sub.id));
-        removed++;
-      } else {
-        failed++;
-        console.error("[push] falha ao enviar", err);
-      }
-    }
+  try {
+    configure();
+  } catch (err) {
+    console.error("[push] chaves VAPID inválidas", err);
+    return { sent: 0, failed: 0, removed: 0, devices: 0, error: "Chaves VAPID inválidas (gere de novo com npm run vapid)." };
   }
-  return { sent, failed, removed, devices: subs.length };
+
+  const subs = await db.select().from(pushSubscriptions);
+  const body = JSON.stringify(payload);
+  // Um serviço de push lento não pode segurar os outros nem estourar o tempo da função.
+  const results = await Promise.allSettled(
+    subs.map((sub) =>
+      sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, body, {
+        TTL: 12 * 60 * 60,
+        urgency: "normal",
+        timeout: 10_000,
+      }),
+    ),
+  );
+
+  const delivered: number[] = [];
+  const expired: number[] = [];
+  let failed = 0;
+  results.forEach((result, i) => {
+    if (result.status === "fulfilled") delivered.push(subs[i].id);
+    else if (result.reason instanceof WebPushError && (result.reason.statusCode === 404 || result.reason.statusCode === 410)) {
+      expired.push(subs[i].id);
+    } else {
+      failed++;
+      console.error("[push] falha ao enviar", result.reason);
+    }
+  });
+
+  if (delivered.length) {
+    await db.update(pushSubscriptions).set({ lastUsedAt: new Date() }).where(inArray(pushSubscriptions.id, delivered));
+  }
+  if (expired.length) await db.delete(pushSubscriptions).where(inArray(pushSubscriptions.id, expired));
+  return { sent: delivered.length, failed, removed: expired.length, devices: subs.length };
 }

@@ -1,5 +1,51 @@
 import { describe, expect, it } from "vitest";
-import { buildDownPaymentPlan, buildInstallmentPlan, sortSchedule, validateSchedule } from "./schedule";
+import {
+  buildDownPaymentPlan,
+  buildInstallmentPlan,
+  relinkTargetedPayments,
+  sortSchedule,
+  validateSchedule,
+} from "./schedule";
+
+describe("relinkTargetedPayments", () => {
+  // Pagamento 10 apontava para a parcela 3 (vence 10/03).
+  const targeted = [{ paymentId: 10, number: 3, dueDate: "2026-03-10" }];
+
+  it("segue o vencimento quando a parcela muda de número", () => {
+    const next = [
+      { id: 101, number: 1, dueDate: "2025-12-15" },
+      { id: 102, number: 2, dueDate: "2026-01-10" },
+      { id: 103, number: 3, dueDate: "2026-02-10" },
+      { id: 104, number: 4, dueDate: "2026-03-10" },
+    ];
+    expect(relinkTargetedPayments(targeted, next)).toEqual(new Map([[10, 104]]));
+  });
+
+  it("usa o número quando as datas mudaram", () => {
+    const next = [
+      { id: 201, number: 1, dueDate: "2026-01-12" },
+      { id: 202, number: 2, dueDate: "2026-02-12" },
+      { id: 203, number: 3, dueDate: "2026-03-12" },
+    ];
+    expect(relinkTargetedPayments(targeted, next)).toEqual(new Map([[10, 203]]));
+  });
+
+  it("deixa o pagamento solto sem correspondência", () => {
+    const next = [
+      { id: 301, number: 1, dueDate: "2026-01-12" },
+      { id: 302, number: 2, dueDate: "2026-02-12" },
+    ];
+    expect(relinkTargetedPayments(targeted, next).size).toBe(0);
+  });
+
+  it("entre parcelas do mesmo dia, prefere o mesmo número", () => {
+    const next = [
+      { id: 401, number: 2, dueDate: "2026-03-10" },
+      { id: 402, number: 3, dueDate: "2026-03-10" },
+    ];
+    expect(relinkTargetedPayments(targeted, next)).toEqual(new Map([[10, 402]]));
+  });
+});
 
 describe("buildInstallmentPlan", () => {
   it("gera parcelas mensais iguais", () => {

@@ -6,12 +6,15 @@ import { buttonClass } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/field";
 import { EmptyState, PageHeader, Segmented } from "@/components/ui/page";
+import { INACTIVE_SALE_STATUSES } from "@/lib/constants";
 import { todayISO } from "@/lib/dates";
 import { formatBRL } from "@/lib/money";
 import { requireUser } from "@/server/auth";
 import { listSales, SALE_FILTERS, type SaleFilter } from "@/server/queries/sales";
 
 export const metadata: Metadata = { title: "Vendas" };
+
+const LIST_LIMIT = 300;
 
 const FILTER_LABEL: Record<SaleFilter, string> = {
   abertas: "Em aberto",
@@ -28,10 +31,13 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
   const filter: SaleFilter = (SALE_FILTERS as readonly string[]).includes(sp.filtro ?? "") ? (sp.filtro as SaleFilter) : "abertas";
   const q = sp.q?.trim() ?? "";
   const today = todayISO();
-  const rows = await listSales({ q, filter, today });
+  const found = await listSales({ q, filter, today, limit: LIST_LIMIT + 1 });
+  const truncated = found.length > LIST_LIMIT;
+  const rows = truncated ? found.slice(0, LIST_LIMIT) : found;
 
   const total = rows.reduce((s, r) => s + r.totalCents, 0);
-  const open = rows.reduce((s, r) => s + r.summary.remainingCents, 0);
+  // Orçamentos e canceladas não são cobrados: ficam fora do "em aberto" (como no dashboard).
+  const open = rows.filter((r) => !INACTIVE_SALE_STATUSES.includes(r.status)).reduce((s, r) => s + r.summary.remainingCents, 0);
   const href = (f: SaleFilter) => `/vendas?filtro=${f}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
 
   return (
@@ -76,7 +82,9 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
             </ul>
             <div className="flex flex-wrap justify-between gap-2 border-t border-line px-5 py-3 text-sm text-ink-2">
               <span>
-                {rows.length} {rows.length === 1 ? "venda" : "vendas"}
+                {truncated
+                  ? `As ${LIST_LIMIT} vendas mais recentes (use a busca para achar as outras)`
+                  : `${rows.length} ${rows.length === 1 ? "venda" : "vendas"}`}
               </span>
               <span className="tabular-nums">
                 Total {formatBRL(total)}

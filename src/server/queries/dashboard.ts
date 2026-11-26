@@ -6,6 +6,7 @@ import { INACTIVE_SALE_STATUSES } from "@/lib/constants";
 import {
   addMonthsToKey,
   formatMonthLong,
+  isSupportedYear,
   isValidMonthKey,
   monthKey,
   monthRange,
@@ -34,7 +35,8 @@ export type Period = {
 
 export function resolvePeriod(params: { periodo?: string; mes?: string; ano?: string }, today: string): Period {
   if (params.periodo === "ano") {
-    const year = /^\d{4}$/.test(params.ano ?? "") ? Number(params.ano) : Number(today.slice(0, 4));
+    const asked = Number(params.ano);
+    const year = /^\d{4}$/.test(params.ano ?? "") && isSupportedYear(asked) ? asked : Number(today.slice(0, 4));
     return {
       mode: "ano",
       key: String(year),
@@ -77,17 +79,24 @@ export type PeriodTotals = {
   salesCount: number;
 };
 
+/*
+ * Resultados em regime de caixa:
+ * - Recebido = todo pagamento registrado no período, mesmo de venda cancelada depois
+ *   (o dinheiro entrou; se foi devolvido, o pagamento deve ser apagado).
+ * - Gastos = só os já pagos (os em aberto aparecem em "Contas a pagar").
+ */
+const paidExpense = eq(expenses.paid, true);
+
 export async function getPeriodTotals(start: string, end: string): Promise<PeriodTotals> {
   const [[received], [spent], [sold]] = await Promise.all([
     db
       .select({ cents: sql<number>`coalesce(sum(${payments.amountCents}), 0)` })
       .from(payments)
-      .innerJoin(sales, eq(sales.id, payments.saleId))
-      .where(and(activeSale, between(payments.date, start, end))),
+      .where(between(payments.date, start, end)),
     db
       .select({ cents: sql<number>`coalesce(sum(${expenses.amountCents}), 0)` })
       .from(expenses)
-      .where(between(expenses.date, start, end)),
+      .where(and(paidExpense, between(expenses.date, start, end))),
     db
       .select({ cents: sql<number>`coalesce(sum(${sales.totalCents}), 0)`, n: count() })
       .from(sales)
@@ -113,13 +122,12 @@ export async function getMonthlySeries(months: string[]): Promise<MonthlyPoint[]
     db
       .select({ month: sql<string>`substr(${payments.date}, 1, 7)`, cents: sql<number>`sum(${payments.amountCents})` })
       .from(payments)
-      .innerJoin(sales, eq(sales.id, payments.saleId))
-      .where(and(activeSale, between(payments.date, start, end)))
+      .where(between(payments.date, start, end))
       .groupBy(sql`substr(${payments.date}, 1, 7)`),
     db
       .select({ month: sql<string>`substr(${expenses.date}, 1, 7)`, cents: sql<number>`sum(${expenses.amountCents})` })
       .from(expenses)
-      .where(between(expenses.date, start, end))
+      .where(and(paidExpense, between(expenses.date, start, end)))
       .groupBy(sql`substr(${expenses.date}, 1, 7)`),
   ]);
   const r = new Map(received.map((x) => [x.month, Number(x.cents)]));
@@ -148,12 +156,13 @@ export async function getTopProducts(start: string, end: string, limit = 6) {
 }
 
 export async function getChannelBreakdown(start: string, end: string) {
-  const label = sql<string>`coalesce(nullif(trim(${sales.channel}), ''), 'Não informado')`;
+  const label = sql`coalesce(nullif(trim(${sales.channel}), ''), 'Não informado')`;
   const rows = await db
-    .select({ name: label, n: count(), cents: sql<number>`sum(${sales.totalCents})` })
+    // "instagram" e "Instagram" contam juntos; min() exibe a grafia com maiúscula.
+    .select({ name: sql<string>`min(${label})`, n: count(), cents: sql<number>`sum(${sales.totalCents})` })
     .from(sales)
     .where(and(activeSale, between(sales.date, start, end)))
-    .groupBy(label)
+    .groupBy(sql`lower(${label})`)
     .orderBy(desc(sql`sum(${sales.totalCents})`));
   return rows.map((r) => ({ name: r.name, count: Number(r.n), cents: Number(r.cents) }));
 }

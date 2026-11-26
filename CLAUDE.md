@@ -21,6 +21,9 @@ Pontos já usados aqui: `src/proxy.ts` (não `middleware`), `params`/`searchPara
 - Regras puras em `src/lib/domain/` com testes (`*.test.ts`). Abatimento de pagamentos: `allocation.ts`
   (pagamento direcionado → parcela escolhida; resto → parcela mais antiga; excesso → crédito).
 - Vendas `orcamento` e `cancelado` não contam em faturamento/cobranças (`INACTIVE_SALE_STATUSES`).
+- Dashboard em **regime de caixa**: recebido = todos os pagamentos do período (inclusive de venda cancelada); gastos = só `paid = true`.
+- Argumentos de Server Action chegam do cliente sem garantia de tipo: valide ids com `parseId` e o resto com Zod.
+  Leitura + escrita que dependem uma da outra (saldo, primeira conta) vão em `db.transaction` (libSQL = `BEGIN IMMEDIATE`).
 - **Leitura** em `src/server/queries/*` (com `import "server-only"`). **Escrita** em `src/server/actions/*` (`"use server"`):
   sempre `await requireUser()` primeiro, validar com Zod, devolver `ActionResult` (`ok()`/`fail()`), e `revalidatePath("/", "layout")`.
 - Toda página logada chama `requireUser()` (o proxy só faz checagem otimista do cookie).

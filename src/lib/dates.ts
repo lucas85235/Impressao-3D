@@ -3,6 +3,14 @@
 
 export const DEFAULT_TIMEZONE = "America/Sao_Paulo";
 
+/** Faixa de anos aceita nas datas de negócio (barra ano digitado errado, como 0202 ou 2206). */
+export const MIN_YEAR = 2000;
+export const MAX_YEAR = 2100;
+
+export function isSupportedYear(year: number): boolean {
+  return Number.isInteger(year) && year >= MIN_YEAR && year <= MAX_YEAR;
+}
+
 const ISO_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function isValidISODate(value: unknown): value is string {
@@ -25,7 +33,7 @@ function pad(n: number): string {
 }
 
 export function toISO(year: number, month: number, day: number): string {
-  return `${year}-${pad(month)}-${pad(day)}`;
+  return `${String(year).padStart(4, "0")}-${pad(month)}-${pad(day)}`;
 }
 
 export function daysInMonth(year: number, month: number): number {
@@ -58,7 +66,7 @@ export function addMonths(iso: string, months: number): string {
   const [y, m, d] = parts(iso);
   const total = y * 12 + (m - 1) + months;
   const ny = Math.floor(total / 12);
-  const nm = (total % 12) + 1;
+  const nm = (((total % 12) + 12) % 12) + 1;
   return toISO(ny, nm, Math.min(d, daysInMonth(ny, nm)));
 }
 
@@ -76,7 +84,7 @@ export function monthKey(iso: string): string {
 }
 
 export function isValidMonthKey(value: unknown): value is string {
-  return typeof value === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+  return typeof value === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(value) && isSupportedYear(Number(value.slice(0, 4)));
 }
 
 export function addMonthsToKey(key: string, months: number): string {

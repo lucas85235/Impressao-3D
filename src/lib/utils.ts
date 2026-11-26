@@ -44,10 +44,21 @@ export function initials(name: string): string {
   return (first + last).toUpperCase();
 }
 
-/** Mantém só caminhos internos (evita open redirect no ?next=). */
+/**
+ * Mantém só caminhos internos (evita open redirect no ?next=).
+ * Recusa "//site.com", barra invertida e caracteres de controle: o navegador descarta TAB e
+ * quebras de linha ao montar a URL, então "/\t/site.com" viraria "//site.com" (outro domínio).
+ */
 export function safeInternalPath(value: unknown, fallback = "/"): string {
-  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
+  if (typeof value !== "string" || value.length > 2000) return fallback;
+  if (!value.startsWith("/") || /[\u0000-\u001F\u007F\\]/.test(value)) return fallback;
+  try {
+    const base = "http://app.invalid";
+    const url = new URL(value, base);
+    // "/.//site.com" é normalizado para "//site.com": também recusado.
+    if (url.origin !== base || url.pathname.startsWith("//")) return fallback;
+    return url.pathname + url.search + url.hash;
+  } catch {
     return fallback;
   }
-  return value;
 }

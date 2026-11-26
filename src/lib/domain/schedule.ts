@@ -82,6 +82,25 @@ export function validateSchedule(rows: ScheduleRow[], totalCents: number): strin
   return null;
 }
 
+/**
+ * Ao editar uma venda o plano é recriado. Religa cada pagamento que apontava para uma parcela:
+ * primeiro à parcela de mesmo vencimento (de preferência com o mesmo número), senão à de mesmo número.
+ * Sem correspondência, o pagamento fica solto (abatido da parcela mais antiga).
+ * Devolve Map<paymentId, id da nova parcela>.
+ */
+export function relinkTargetedPayments(
+  targeted: { paymentId: number; number: number; dueDate: string }[],
+  next: { id: number; number: number; dueDate: string }[],
+): Map<number, number> {
+  const out = new Map<number, number>();
+  for (const t of targeted) {
+    const sameDate = next.filter((n) => n.dueDate === t.dueDate);
+    const match = sameDate.find((n) => n.number === t.number) ?? sameDate[0] ?? next.find((n) => n.number === t.number);
+    if (match) out.set(t.paymentId, match.id);
+  }
+  return out;
+}
+
 /** Ordena por vencimento (estável) — usado antes de numerar as parcelas. */
 export function sortSchedule(rows: ScheduleRow[]): ScheduleRow[] {
   return rows

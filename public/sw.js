@@ -28,9 +28,20 @@ self.addEventListener("push", (event) => {
   );
 });
 
+/** Só abre páginas do próprio app (nunca outro domínio vindo do payload). */
+function appUrl(raw) {
+  try {
+    const url = new URL(raw || "/", self.location.origin);
+    if (url.origin === self.location.origin) return url.href;
+  } catch {
+    // URL inválida: cai no padrão
+  }
+  return new URL("/cobrancas", self.location.origin).href;
+}
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = new URL((event.notification.data && event.notification.data.url) || "/", self.location.origin).href;
+  const target = appUrl(event.notification.data && event.notification.data.url);
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });

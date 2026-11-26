@@ -6,11 +6,14 @@ import {
   daysBetween,
   formatDateBR,
   formatMonthLong,
+  isSupportedYear,
   isValidISODate,
+  isValidMonthKey,
   monthRange,
   monthsBetween,
   relativeDayLabel,
   todayISO,
+  toISO,
 } from "./dates";
 
 describe("datas", () => {
@@ -41,8 +44,23 @@ describe("datas", () => {
 
   it("trabalha com chaves de mês", () => {
     expect(addMonthsToKey("2026-11", 2)).toBe("2027-01");
+    expect(addMonthsToKey("2026-01", -13)).toBe("2024-12");
     expect(monthRange("2028-02")).toEqual({ start: "2028-02-01", end: "2028-02-29" });
     expect(monthsBetween("2026-11", "2027-02")).toEqual(["2026-11", "2026-12", "2027-01", "2027-02"]);
+  });
+
+  it("aceita só meses e anos dentro da faixa suportada", () => {
+    expect(isValidMonthKey("2026-11")).toBe(true);
+    expect(isValidMonthKey("2026-13")).toBe(false);
+    expect(isValidMonthKey("0999-01")).toBe(false);
+    expect(isValidMonthKey("2101-01")).toBe(false);
+    expect(isSupportedYear(2000)).toBe(true);
+    expect(isSupportedYear(1999)).toBe(false);
+  });
+
+  it("monta datas com ano de 4 dígitos", () => {
+    expect(toISO(2026, 3, 5)).toBe("2026-03-05");
+    expect(toISO(999, 1, 5)).toBe("0999-01-05");
   });
 
   it("formata em pt-BR", () => {

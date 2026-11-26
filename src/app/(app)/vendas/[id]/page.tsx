@@ -20,6 +20,7 @@ import { requireUser } from "@/server/auth";
 import { chargeLink } from "@/server/charge-links";
 import { getSaleDetail } from "@/server/queries/sales";
 import { getSettings } from "@/server/settings";
+import { parseId } from "@/server/validation";
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const { id } = await params;
@@ -28,9 +29,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function SaleDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireUser();
-  const { id } = await params;
+  const saleId = parseId((await params).id);
   const today = todayISO();
-  const [sale, settings] = await Promise.all([getSaleDetail(Number(id), today), getSettings()]);
+  const [sale, settings] = await Promise.all([saleId ? getSaleDetail(saleId, today) : null, getSettings()]);
   if (!sale) notFound();
 
   const s = sale.summary;
@@ -119,7 +120,13 @@ export default async function SaleDetailPage({ params }: { params: Promise<{ id:
                 {sale.status === "orcamento" ? (
                   <span className="text-sm text-ink-2">Orçamento — ainda não conta no faturamento nem gera cobranças.</span>
                 ) : null}
-                {sale.status === "cancelado" ? <span className="text-sm text-ink-2">Venda cancelada.</span> : null}
+                {sale.status === "cancelado" ? (
+                  <span className="text-sm text-ink-2">
+                    {s.paidCents > 0
+                      ? `Venda cancelada. Os ${formatBRL(s.paidCents)} recebidos continuam no caixa; se devolveu o dinheiro, apague o pagamento em “Pagamentos recebidos”.`
+                      : "Venda cancelada."}
+                  </span>
+                ) : null}
               </div>
               <div className="mt-3 grid grid-cols-3 gap-4">
                 <div>

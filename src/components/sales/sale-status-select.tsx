@@ -25,7 +25,12 @@ export function SaleStatusSelect({ saleId, status }: { saleId: number; status: S
             setValue(previous);
             toast.error(result.error);
           } else {
-            toast.success(`Situação: ${SALE_STATUS_LABEL[next]}`);
+            toast.success(`Situação: ${SALE_STATUS_LABEL[next]}`, {
+              description:
+                next === "cancelado" && result.data.paidCents > 0
+                  ? "Os pagamentos já recebidos continuam no caixa. Se devolveu o dinheiro, apague o pagamento."
+                  : undefined,
+            });
           }
         });
       }}

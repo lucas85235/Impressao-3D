@@ -15,7 +15,7 @@ pode ser publicado de graça na internet para acessar de qualquer lugar.
 | **Cobranças** | Lista de atrasadas / vencem hoje / próximos dias, com botão **WhatsApp** que abre a mensagem pronta (com sua chave Pix) e botão **Receber** |
 | **Lembretes automáticos** | Resumo diário por **notificação push** no celular/PC, alerta no painel e contador no menu |
 | **Gastos** | Categorias, compras **parceladas** (ex.: impressora em 10×), contas a pagar |
-| **Dashboard** | Lucro do mês/ano, recebido × gastos (12 meses), previsão de recebimentos, gastos por categoria, produtos mais vendidos, canais de venda |
+| **Dashboard** | Lucro do mês/ano em regime de caixa (pagamentos recebidos − gastos pagos), recebido × gastos (12 meses), previsão de recebimentos, gastos por categoria, produtos mais vendidos, canais de venda |
 | **Cadastros** | Clientes (histórico, quanto devem) e catálogo de produtos (preço, custo, margem, gramas, tempo de impressão) |
 | **Outros** | Login com senha, tema claro/escuro, backup em JSON, PWA (instalável) |
 
@@ -73,6 +73,9 @@ Usamos **Vercel** (hospedagem) + **Turso** (banco SQLite na nuvem). Os dois têm
    | `CRON_SECRET` | do `npm run vapid` |
    | `APP_TIMEZONE` | `America/Sao_Paulo` |
 
+   Marque essas variáveis só para **Production**. Deploys de *preview* (outros branches/PRs) não aplicam
+   migrações, para não mexer no banco de produção. Se quiser previews funcionando, crie um segundo banco
+   no Turso, cadastre as variáveis dele em **Preview** e adicione `MIGRATE_ON_PREVIEW=1`.
 5. **Deploy** — o build aplica as migrações no banco automaticamente.
 6. Abra o site, **crie sua conta** (ele pede o `SETUP_CODE`).
 7. **No celular**: abra o site → *Adicionar à tela inicial* → **Configurações → Ativar notificações**.
@@ -88,7 +91,8 @@ Também dá para usar qualquer agendador externo chamando a URL com o header `Au
 
 ## 🔐 Segurança
 
-- Senhas com **scrypt**; sessão em cookie `httpOnly`; limite de tentativas de login.
+- Senhas com **scrypt**; sessão em cookie `httpOnly`; limite de tentativas de login (por IP e por e-mail).
+- Trocar a senha desconecta os outros aparelhos.
 - Cada página e cada ação conferem o login **no servidor**.
 - Em produção, criar a conta inicial exige o `SETUP_CODE`.
 - **Nunca** suba `.env.local` nem a pasta `data/` (já estão no `.gitignore`).

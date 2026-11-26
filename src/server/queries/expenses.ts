@@ -32,8 +32,8 @@ export async function listExpenses({ month, categoryId }: { month: string; categ
 
 export type ExpenseRow = Awaited<ReturnType<typeof listExpenses>>[number];
 
-/** Gastos agrupados por categoria no intervalo (maior primeiro). */
-export async function expensesByCategory(start: string, end: string) {
+/** Gastos agrupados por categoria no intervalo (maior primeiro). `paidOnly`: só os já pagos (visão de caixa). */
+export async function expensesByCategory(start: string, end: string, { paidOnly = false }: { paidOnly?: boolean } = {}) {
   const rows = await db
     .select({
       categoryId: expenses.categoryId,
@@ -42,7 +42,7 @@ export async function expensesByCategory(start: string, end: string) {
     })
     .from(expenses)
     .leftJoin(expenseCategories, eq(expenseCategories.id, expenses.categoryId))
-    .where(between(expenses.date, start, end))
+    .where(and(between(expenses.date, start, end), paidOnly ? eq(expenses.paid, true) : undefined))
     .groupBy(expenses.categoryId)
     .orderBy(desc(sql`sum(${expenses.amountCents})`));
   return rows.map((r) => ({ ...r, cents: Number(r.cents) }));

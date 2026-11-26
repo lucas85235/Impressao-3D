@@ -94,7 +94,8 @@ const METHODS: [PaymentMethod, number][] = [
 
 async function main() {
   const url = process.env.DATABASE_URL ?? "";
-  if (!url.includes("demo")) {
+  // Só arquivo local com "demo" no nome: o script APAGA todas as tabelas.
+  if (!url.startsWith("file:") || !url.includes("demo")) {
     console.error('Por segurança, rode com um banco de demonstração: DATABASE_URL=file:./data/demo.db (use "npm run db:demo").');
     process.exit(1);
   }
